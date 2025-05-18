@@ -1,3 +1,4 @@
+# قم بتوصيل السلك الاخر مع gnd و ليس اي دبوس اخر 
 #define INPUT_PIN 8 
 
 void setup() {
