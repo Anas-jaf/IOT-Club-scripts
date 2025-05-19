@@ -1,29 +1,31 @@
-// Analog Line Sensor Pins
-const int sensorPins[] = {14 ,15, 16 , 17 ,18 ,19}; // 6 analog sensors
+// Sensor Configuration
+const int sensorPins[] = {19, 18, 17, 16, 15, 14}; // Left to right
 const int numSensors = 6;
-const int threshold = 600; // Adjust based on your surface
+int sensorValues[6];
+int threshold = 800;
+const int irEmitterPin = 13;
 
-// Motor Control Pins
-#define IN1 7      // Left Motor IN1
-#define IN2 6      // Left Motor IN2
-#define IN3 5      // Right Motor IN3
-#define IN4 4      // Right Motor IN4
-#define ENA 3      // Left Motor PWM
-#define ENB 11     // Right Motor PWM
+// Motor Configuration
+#define IN1 7
+#define IN2 6
+#define IN3 5
+#define IN4 4
+#define ENA 3
+#define ENB 11
 
-// Ultrasonic Sensor Pins
+// Ultrasonic Sensor
 #define trigPin 12
 #define echoPin 10
 
-// PID Constants (tune these)
-const float Kp = 0.8;
-const float Ki = 0.01;
-const float Kd = 0.3;
-const int targetPosition = 2500; // Center position (0-5000 scale)
+// PID Constants
+const float Kp = 0.22;
+const float Ki = 0.005;
+const float Kd = 0.23;
+const int targetPosition = 2500;
 
-// Motor Speeds
-int baseSpeed = 90;  // Base speed (0-255)
-int maxSpeed = 180;  // Maximum speed
+// Motor Control
+int baseSpeed = 90;
+int maxSpeed = 100;
 
 // PID Variables
 float error = 0, lastError = 0;
@@ -32,146 +34,116 @@ float output = 0;
 
 void setup() {
   Serial.begin(9600);
-  
-  // Initialize motor pins
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(IN3, OUTPUT);
-  pinMode(IN4, OUTPUT);
-  pinMode(ENA, OUTPUT);
-  pinMode(ENB, OUTPUT);
-  
-  // Initialize ultrasonic sensor
+
+  // Motor Pins
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  pinMode(ENA, OUTPUT); pinMode(ENB, OUTPUT);
+
+  // Ultrasonic Pins
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
+
+  // IR Emitter
+  pinMode(irEmitterPin, OUTPUT);
+  digitalWrite(irEmitterPin, HIGH);
+
+  calibrateSensors();
 }
 
 void loop() {
-  long distance = getDistanceCM();
-
-  if (distance < 10) { // Obstacle detected
+  if (getDistanceCM() < 10) {
     avoidObstacle();
     return;
   }
-  
-  int linePosition = getLinePosition();
-  
-  if (linePosition == -1) {
-    // No line detected - implement recovery
+
+  int position = getLinePosition();
+
+  if (position == -1) {
+    stopMotors();
+    delay(100);
     if (!recoverLine()) {
       searchForLine();
     }
-  } else {
-    // PID Line Following
-    error = targetPosition - linePosition;
-    integral += error;
-    derivative = error - lastError;
-    output = (Kp * error) + (Ki * integral) + (Kd * derivative);
-    lastError = error;
-    
-    // Calculate motor speeds
-    int leftSpeed = baseSpeed + output;
-    int rightSpeed = baseSpeed - output;
-    
-    // Constrain speeds
-    leftSpeed = constrain(leftSpeed, 0, maxSpeed);
-    rightSpeed = constrain(rightSpeed, 0, maxSpeed);
-    
-    // Set motor directions (always forward for PID)
-    digitalWrite(IN1, HIGH);
-    digitalWrite(IN2, LOW);
-    digitalWrite(IN3, HIGH);
-    digitalWrite(IN4, LOW);
-    
-    // Apply motor speeds
-    analogWrite(ENA, leftSpeed);
-    analogWrite(ENB, rightSpeed);
-    
-    // Debug output
-    Serial.print("Pos: ");
-    Serial.print(linePosition);
-    Serial.print(" | PID: ");
-    Serial.print(output);
-    Serial.print(" | Speeds: L=");
-    Serial.print(leftSpeed);
-    Serial.print(" R=");
-    Serial.println(rightSpeed);
+    return;
   }
+
+  // PID Control
+  error = targetPosition - position;
+  integral = constrain(integral + error, -500, 500);
+  derivative = error - lastError;
+  output = Kp * error + Ki * integral + Kd * derivative;
+  lastError = error;
+
+  output = constrain(output, -baseSpeed, baseSpeed);
+
+  int leftSpeed = baseSpeed + output;
+  int rightSpeed = baseSpeed - output;
+
+  leftSpeed = constrain(leftSpeed, 0, maxSpeed);
+  rightSpeed = constrain(rightSpeed, 0, maxSpeed);
+
+  setMotorSpeeds(leftSpeed, rightSpeed);
+  printDebug(position, output, leftSpeed, rightSpeed);
+
   delay(10);
 }
 
 int getLinePosition() {
   int position = 0;
   int activeSensors = 0;
-  
+
   for (int i = 0; i < numSensors; i++) {
-    int value = analogRead(sensorPins[i]);
-    if (value > threshold) {
-      position += (i * 1000); // Weighted position
+    sensorValues[i] = analogRead(sensorPins[i]);
+    if (sensorValues[i] > threshold) {
+      position += i * 1000;
       activeSensors++;
     }
   }
-  
+
   return activeSensors > 0 ? position / activeSensors : -1;
 }
 
-// Your existing functions with minor adjustments
-void avoidObstacle() {
-  int degree = 300; 
-  stopMotors();
-  delay(500);
-
-  // 1. Turn right 90° (left motor forward only)
+void setMotorSpeeds(int left, int right) {
+  // Left Motor
   digitalWrite(IN1, HIGH);
   digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, LOW);
-  analogWrite(ENA, baseSpeed);
-  analogWrite(ENB, 0);
-  delay(degree);
-  stopMotors();
-  delay(300);
+  analogWrite(ENA, left);
 
-  // 2. Move forward to pass obstacle
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
+  // Right Motor
   digitalWrite(IN3, HIGH);
   digitalWrite(IN4, LOW);
-  analogWrite(ENA, baseSpeed);
-  analogWrite(ENB, baseSpeed);
-  delay(1000);
-  stopMotors();
-  delay(300);
-  if (getLinePosition() != -1) return;
+  analogWrite(ENB, right);
+}
 
-  // 3. Turn left 90° (right motor forward only)
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
-  analogWrite(ENA, 0);
-  analogWrite(ENB, baseSpeed);
-  delay(degree);
-  stopMotors();
-  delay(300);
-  
-  // 4. Move forward to find line
-  unsigned long startTime = millis();
-  unsigned long maxDuration = 1500;
+void calibrateSensors() {
+  Serial.println("Calibrating sensors...");
+  int minVal = 1024, maxVal = 0;
 
-  while (millis() - startTime < maxDuration) {
-    digitalWrite(IN1, HIGH);
-    digitalWrite(IN2, LOW);
-    digitalWrite(IN3, HIGH);
-    digitalWrite(IN4, LOW);
-    analogWrite(ENA, baseSpeed);
-    analogWrite(ENB, baseSpeed);
-
-    if (getLinePosition() != -1) {
-      break;
+  for (int i = 0; i < 100; i++) {
+    for (int j = 0; j < numSensors; j++) {
+      int val = analogRead(sensorPins[j]);
+      minVal = min(minVal, val);
+      maxVal = max(maxVal, val);
     }
+    delay(10);
   }
-  stopMotors();
+
+  threshold = (minVal + maxVal) / 2;
+  Serial.print("Calibration complete. Threshold: ");
+  Serial.println(threshold);
+}
+
+void printDebug(int pos, float pid, int l, int r) {
+  Serial.print("Pos:"); Serial.print(pos);
+  Serial.print(" PID:"); Serial.print(pid, 1);
+  Serial.print(" L:"); Serial.print(l);
+  Serial.print(" R:"); Serial.print(r);
+  Serial.print(" Sensors:");
+  for (int i = 0; i < numSensors; i++) {
+    Serial.print(sensorValues[i] > threshold ? "B" : "W");
+  }
+  Serial.println();
 }
 
 long getDistanceCM() {
@@ -180,50 +152,81 @@ long getDistanceCM() {
   digitalWrite(trigPin, HIGH);
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
-
   long duration = pulseIn(echoPin, HIGH);
   return duration * 0.034 / 2;
 }
 
+void avoidObstacle() {
+  stopMotors();
+  delay(500);
+
+  // Turn right
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);  digitalWrite(IN4, LOW);
+  analogWrite(ENA, baseSpeed);
+  analogWrite(ENB, 0);
+  delay(300);
+  stopMotors();
+  delay(300);
+
+  // Move forward
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+  analogWrite(ENA, baseSpeed);
+  analogWrite(ENB, baseSpeed);
+  delay(1000);
+  stopMotors();
+  delay(300);
+  if (getLinePosition() != -1) return;
+
+  // Turn left
+  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+  analogWrite(ENA, 0);
+  analogWrite(ENB, baseSpeed);
+  delay(300);
+  stopMotors();
+  delay(300);
+
+  // Search for line
+  unsigned long startTime = millis();
+  while (millis() - startTime < 1500) {
+    digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+    digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
+    analogWrite(ENA, baseSpeed);
+    analogWrite(ENB, baseSpeed);
+    if (getLinePosition() != -1) break;
+  }
+  stopMotors();
+}
+
 bool recoverLine() {
-  // Move backward
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, HIGH);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, HIGH);
+  // Move backward briefly
+  digitalWrite(IN1, LOW); digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, HIGH);
   analogWrite(ENA, baseSpeed);
   analogWrite(ENB, baseSpeed);
   delay(300);
   stopMotors();
-
-  // Check if line found
   return (getLinePosition() != -1);
 }
 
 void searchForLine() {
   unsigned long startTime = millis();
-  unsigned long moveDuration = 1200;
-
-  digitalWrite(IN1, HIGH);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, HIGH);
-  digitalWrite(IN4, LOW);
+  digitalWrite(IN1, HIGH); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH); digitalWrite(IN4, LOW);
   analogWrite(ENA, baseSpeed);
   analogWrite(ENB, baseSpeed);
 
-  while (millis() - startTime < moveDuration) {
-    if (getLinePosition() != -1) {
-      return;
-    }
+  while (millis() - startTime < 1200) {
+    if (getLinePosition() != -1) return;
   }
   stopMotors();
 }
 
 void stopMotors() {
-  digitalWrite(IN1, LOW);
-  digitalWrite(IN2, LOW);
-  digitalWrite(IN3, LOW);
-  digitalWrite(IN4, LOW);
+  digitalWrite(IN1, LOW); digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW); digitalWrite(IN4, LOW);
   analogWrite(ENA, 0);
   analogWrite(ENB, 0);
 }
