@@ -21,6 +21,9 @@ int autoEndHour = 21;
 int autoEndMinute = 0;
 
 void setup() {
+  int dacValue = (1.5 / 3.3) * 255;  // ~116
+  dacWrite(25, dacValue);
+  
   Serial.begin(115200);
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, HIGH);  // Relay OFF by default
