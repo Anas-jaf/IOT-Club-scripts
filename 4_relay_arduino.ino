@@ -1,139 +1,134 @@
 /*
-  مشروع تشغيل 4 ريليهات (Relay 4 Module)
-  يعمل من الأحد إلى الخميس - من 6 صباحًا إلى 12 ظهرًا
-  **التعديل: اختبار شامل وبصري في setup() مع تأخير بين الحالات**
+   تشغيل 6 ريليهات بنظام 24 ساعة + اختبارات كاملة
+   أيام العمل: الأحد–الخميس
+   ساعات العمل: من 06:00 إلى 11:59
 */
 
 #include <Wire.h>
 #include "RTClib.h"
 
-// استخدام شريحة DS1307
 RTC_DS1307 rtc;
 
-// تعريف قنوات الريلاي الأربعة
-int relayPins[4] = {2, 3, 4, 5};
+// 6 ريليهات من Pin 2 إلى Pin 7
+int relayPins[6] = {2, 3, 4, 5, 6, 7};
+
 const int TEST_DELAY_MS = 2000; // تأخير 2 ثانية بين كل اختبار
 
-// تصريح مسبق لدالة الاختبار التي تتحكم بالريليهات
 void testLogicAndControlRelays(int testDay, int testHour);
 
-// دالة مساعدة لطباعة اسم اليوم
-String getDayName(int dayIndex) {
-  String dayNames[] = {"الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"};
-  if (dayIndex >= 0 && dayIndex <= 6) {
-    return dayNames[dayIndex];
+String getDayName(int d) {
+  String names[] = {"الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"};
+  return names[d];
+}
+
+void force24HourMode() {
+  // قراءة سجل الساعة من DS1307
+  Wire.beginTransmission(0x68);
+  Wire.write(0x02);  // مسجل الساعة
+  Wire.endTransmission();
+
+  Wire.requestFrom(0x68, 1);
+  byte hourReg = Wire.read();
+
+  // إذا كانت الشريحة على نظام 12 ساعة → نحولها 24 ساعة
+  if (hourReg & 0b01000000) {
+    hourReg &= 0b10111111; // clear bit 6 → enforce 24h format
+
+    Wire.beginTransmission(0x68);
+    Wire.write(0x02);
+    Wire.write(hourReg);
+    Wire.endTransmission();
+
+    Serial.println("✔ تم تحويل DS1307 إلى نظام 24 ساعة.");
   }
-  return "غير معروف";
 }
 
 void setup() {
   Serial.begin(9600);
   Serial.println("=================================================");
-  Serial.println("--- Starting System Setup and Visual Tests ---");
-
-  // إعداد الريليهات
-  for (int i = 0; i < 4; i++) {
-    pinMode(relayPins[i], OUTPUT);
-    digitalWrite(relayPins[i], HIGH);  // إطفاء الريلاي في البداية
-  }
+  Serial.println("🔧 بدء الإعداد وتشغيل الاختبارات…");
 
   Wire.begin();
 
   if (!rtc.begin()) {
-    Serial.println("❌ RTC DS1307 غير متصل! يرجى التحقق من التوصيلات.");
-    while (1); 
+    Serial.println("❌ RTC DS1307 غير متصل!");
+    while (1);
   }
-  
-  // =========================================================
-  // 🔔 مرحلة الاختبار الشامل: تعمل مرة واحدة فقط في setup()
-  Serial.println("\n--- 🧠 Running Visual Test Cases ---");
-  
-// 1. (OFF): الإثنين، قبل وقت العمل (5:00 ص)
-  testLogicAndControlRelays(1, 5); 
-  
-  // 2. (ON): الثلاثاء، وقت العمل (10:00 ص)
-  testLogicAndControlRelays(2, 10);
-  
-  // 3. (OFF): السبت، وقت العمل (11:00 ص) - عطلة نهاية أسبوع
-  testLogicAndControlRelays(6, 11); 
-  
-  // 4. (ON): الأحد، وقت العمل (6:00 ص) - بداية الحد الأدنى للتشغيل
-  testLogicAndControlRelays(0, 6);  
-  
-  // 5. (OFF): الخميس، بعد وقت العمل (3:00 م)
-  testLogicAndControlRelays(4, 15);
-  
-  // 6. (ON): الخميس، وقت العمل (11:00 ص) - الحد الأقصى للتشغيل
-  testLogicAndControlRelays(4, 11);
-  
-  // 7. (OFF): الأربعاء، بعد وقت العمل (12:00 ظهراً) - حد الساعة غير المشمول
-  testLogicAndControlRelays(3, 12); 
-  
-  // 8. (OFF): الجمعة، وقت العمل (8:00 ص) - عطلة نهاية أسبوع
-  testLogicAndControlRelays(5, 8);  
-  
-  Serial.println("\n--- Tests Complete. Turning OFF all relays. ---");
-  for (int i = 0; i < 4; i++) {
+
+  // إجبار نظام 24 ساعة
+  force24HourMode();
+
+  // تجهيز الريليهات
+  for (int i = 0; i < 6; i++) {
+    pinMode(relayPins[i], OUTPUT);
     digitalWrite(relayPins[i], HIGH);
   }
-  delay(1000); // تأخير بسيط قبل الدخول إلى اللوب
-  
+
+  // ===============================
+  // تشغيل جميع الاختبارات
+  // ===============================
+  Serial.println("\n--- 🧠 بدء الاختبارات (نظام 24 ساعة) ---");
+
+  testLogicAndControlRelays(1, 5);   // الاثنين 05:00 → OFF
+  testLogicAndControlRelays(2, 10);  // الثلاثاء 10:00 → ON
+  testLogicAndControlRelays(6, 11);  // السبت 11:00 → OFF
+  testLogicAndControlRelays(0, 6);   // الأحد 06:00 → ON
+  testLogicAndControlRelays(4, 15);  // الخميس 15:00 → OFF
+  testLogicAndControlRelays(4, 11);  // الخميس 11:00 → ON
+  testLogicAndControlRelays(3, 12);  // الأربعاء 12:00 → OFF
+  testLogicAndControlRelays(5, 8);   // الجمعة 08:00 → OFF
+
+  Serial.println("\n🔚 نهاية الاختبارات، إطفاء جميع الريليهات...");
+  for (int i = 0; i < 6; i++) digitalWrite(relayPins[i], HIGH);
+
   Serial.println("=================================================");
-  Serial.println("Entering main loop, checking time every second...");
+  Serial.println("الدخول إلى الوضع التشغيلي الحقيقي…");
 }
 
 void loop() {
-  // الكود هنا يستمر في العمل باستخدام القراءة الفعلية لـ RTC
+
+  // تأكيد دائم أن DS1307 تعمل 24 ساعة
+  force24HourMode();
+
+  // قراءة الوقت الحقيقي
   DateTime now = rtc.now();
 
-  int day = now.dayOfTheWeek();    // 0 = الأحد ، 6 = السبت
-  int hour = now.hour();
+  int day  = now.dayOfTheWeek(); // 0 = الأحد
+  int hour = now.hour();         // نظام 24 ساعة
 
-  // منطق التشغيل الفعلي
-  bool allowedDays = (day >= 0 && day <= 4);  // الأحد إلى الخميس
-  bool allowedHours = (hour >= 6 && hour < 12); // من 6 إلى 12 ظهرًا
+  bool allowedDays = (day >= 0 && day <= 4);   // الأحد → الخميس
+  bool allowedHours = (hour >= 6 && hour < 12);
 
   if (allowedDays && allowedHours) {
-    // تشغيل الريليهات كلها
-    for (int i = 0; i < 4; i++) {
-      digitalWrite(relayPins[i], LOW);  // تشغيل (Active LOW)
-    }
+    for (int i = 0; i < 6; i++) digitalWrite(relayPins[i], LOW);
   } else {
-    // إطفاء الريليهات كلها
-    for (int i = 0; i < 4; i++) {
-      digitalWrite(relayPins[i], HIGH);
-    }
+    for (int i = 0; i < 6; i++) digitalWrite(relayPins[i], HIGH);
   }
-  
-  delay(1000); // تحديث كل ثانية
+
+  delay(1000);
 }
 
-// 🔔 دالة الاختبار التي تنفذ المنطق وتتحكم بالريليهات
+// ===============================
+// دالة الاختبار البصري
+// ===============================
 void testLogicAndControlRelays(int testDay, int testHour) {
-  // تطبيق نفس منطق الكود الفعلي
-  bool allowedDays = (testDay >= 0 && testDay <= 4); 
-  bool allowedHours = (testHour >= 6 && testHour < 12); 
-  
-  Serial.print(" - Test Time: ");
+
+  bool allowedDays = (testDay >= 0 && testDay <= 4);
+  bool allowedHours = (testHour >= 6 && testHour < 12);
+
+  Serial.print("📝 اختبار: ");
   Serial.print(getDayName(testDay));
-  Serial.print(" (");
+  Serial.print(" - ");
   Serial.print(testHour);
-  Serial.print(":00)");
-  
+  Serial.print(":00");
+
   if (allowedDays && allowedHours) {
-    // 💡 تشغيل الريليهات بصرياً
-    for (int i = 0; i < 4; i++) {
-      digitalWrite(relayPins[i], LOW); // تشغيل
-    }
-    Serial.println(" -> Result: ✅ ON (Wait 2s)");
+    for (int i = 0; i < 6; i++) digitalWrite(relayPins[i], LOW);
+    Serial.println(" → 🟢 تشغيل (ON)");
   } else {
-    // 💡 إطفاء الريليهات بصرياً
-    for (int i = 0; i < 4; i++) {
-      digitalWrite(relayPins[i], HIGH); // إطفاء
-    }
-    Serial.println(" -> Result: ❌ OFF (Wait 2s)");
+    for (int i = 0; i < 6; i++) digitalWrite(relayPins[i], HIGH);
+    Serial.println(" → 🔴 إيقاف (OFF)");
   }
-  
-  // ⏱️ التأخير المطلوب للمراقبة البصرية
-  delay(TEST_DELAY_MS); 
+
+  delay(TEST_DELAY_MS);
 }
