@@ -13,8 +13,8 @@
 #define ir5 A4
 //*************************************************//
 
-#define enable1_speed 100
-#define enable2_speed 100
+#define enable1_speed 85
+#define enable2_speed 85
 
 void setup() {
   pinMode(m1, OUTPUT);
@@ -60,6 +60,7 @@ void loop() {
     digitalWrite(m2, LOW);
     digitalWrite(m3, LOW);
     digitalWrite(m4, LOW);
+    delay(50);
   }
   
   //if only left most sensor detects black line
@@ -72,6 +73,7 @@ void loop() {
     digitalWrite(m2, LOW);
     digitalWrite(m3, LOW);
     digitalWrite(m4, HIGH);
+    delay(50);
   }
 
   //if only right sensor detects black line
@@ -84,6 +86,7 @@ void loop() {
     digitalWrite(m2, LOW);
     digitalWrite(m3, HIGH);
     digitalWrite(m4, LOW);
+    delay(50);
   }
 
   //if only right most sensor detects black line
@@ -96,6 +99,7 @@ void loop() {
     digitalWrite(m2, HIGH);
     digitalWrite(m3, HIGH);
     digitalWrite(m4, LOW);
+    delay(50);
   }
 
   //if middle and right sensor detects black line
@@ -155,4 +159,5 @@ void loop() {
     digitalWrite(m3, LOW);
     digitalWrite(m4, LOW);
   }
+
 }
