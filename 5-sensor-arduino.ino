@@ -9,7 +9,7 @@
 */
 
 const int ENA = 5, IN1 = 8,  IN2 = 9;
-const int ENB = 6, IN3 = 11, IN4 = 10;
+const int ENB = 6, IN3 = 10, IN4 = 11;
 
 // Sensors
 const int L2 = 2, L1 = 3, M = 4, R1 = 7, R2 = 12;
